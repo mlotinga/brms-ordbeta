@@ -15,6 +15,10 @@
 #'
 #' @details For an introduction to the approach, see Gelman et al. (2019)
 #'  and \url{https://github.com/jgabry/bayes_R2/}.
+#'  For Gaussian and Bernoulli models, \code{bayes_R2} uses model-based
+#'  residual variances as proposed in Gelman et al. (2019), with Bernoulli
+#'  models using Tjur's pseudo-variance. For other families, \code{bayes_R2}
+#'  warns and falls back to residual-based variances.
 #'
 #' @references Andrew Gelman, Ben Goodrich, Jonah Gabry & Aki Vehtari. (2019).
 #'   R-squared for Bayesian regression models, \emph{The American Statistician},
@@ -70,18 +74,38 @@ bayes_R2.brmsfit <- function(object, resp = NULL, summary = TRUE,
       "'bayes_R2' which is likely invalid for ordinal families."
     )
   }
-  args_y <- list(object, warn = TRUE, ...)
   args_ypred <- list(object, sort = TRUE, ...)
   R2 <- named_list(paste0("R2", resp))
+  warned_families <- character(0)
   for (i in seq_along(R2)) {
     # assumes expectations of different responses to be independent
-    args_ypred$resp <- args_y$resp <- resp[i]
-    y <- do_call(get_y, args_y)
+    args_ypred$resp <- resp[i]
     ypred <- do_call(posterior_epred, args_ypred)
     if (is_ordinal(family(object, resp = resp[i]))) {
       ypred <- ordinal_probs_continuous(ypred)
     }
-    R2[[i]] <- .bayes_R2(y, ypred)
+    family_name <- family(object, resp = resp[i])$family
+    if (family_name %in% "gaussian") {
+      args_sigma <- args_ypred
+      args_sigma$dpar <- "sigma"
+      sigma <- do_call(posterior_epred, args_sigma)
+      var_res <- .bayes_R2_var_res_gaussian(sigma)
+      R2[[i]] <- .bayes_R2_model(ypred, var_res)
+    } else if (family_name %in% "bernoulli") {
+      var_res <- .bayes_R2_var_res_bernoulli(ypred)
+      R2[[i]] <- .bayes_R2_model(ypred, var_res)
+    } else {
+      if (!family_name %in% warned_families) {
+        warning2(
+          "No model-based residual variance is currently implemented for ",
+          "family '", family_name, "' in 'bayes_R2'. Falling back ",
+          "to residual-based R2 computation."
+        )
+        warned_families <- c(warned_families, family_name)
+      }
+      y <- do_call(get_y, c(list(object, warn = TRUE, resp = resp[i]), list(...)))
+      R2[[i]] <- .bayes_R2_res(y, ypred)
+    }
   }
   R2 <- do_call(cbind, R2)
   colnames(R2) <- paste0("R2", resp)
@@ -93,9 +117,23 @@ bayes_R2.brmsfit <- function(object, resp = NULL, summary = TRUE,
 
 # internal function of bayes_R2.brmsfit
 # see https://github.com/jgabry/bayes_R2/blob/master/bayes_R2.pdf
-.bayes_R2 <- function(y, ypred, ...) {
+.bayes_R2_res <- function(y, ypred, ...) {
   e <- -1 * sweep(ypred, 2, y)
   var_ypred <- matrixStats::rowVars(ypred)
   var_e <- matrixStats::rowVars(e)
   as.matrix(var_ypred / (var_ypred + var_e))
+}
+
+.bayes_R2_model <- function(ypred, var_res, ...) {
+  var_ypred <- matrixStats::rowVars(ypred)
+  as.matrix(var_ypred / (var_ypred + var_res))
+}
+
+.bayes_R2_var_res_gaussian <- function(sigma, ...) {
+  sigma <- as.matrix(sigma)
+  matrixStats::rowMeans2(sigma^2)
+}
+
+.bayes_R2_var_res_bernoulli <- function(ypred, ...) {
+  matrixStats::rowMeans2(ypred * (1 - ypred))
 }

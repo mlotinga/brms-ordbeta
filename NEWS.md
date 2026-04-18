@@ -28,6 +28,7 @@ These changes may be reverted once the underlying causes of this
 issue have been fixed. (#1658)
 * Align the definition of the R function `step()` with the definition in Stan,
 such that `step(0) == 1` thanks to Daniel Sabanes Bov. (#1734)
+* `bayes_R2` now uses model-based residual variances for Gaussian and Bernoulli models (using Tjur's pseudo-variance for Bernoulli), and warns before falling back to residual-based computation for other families, aligning `bayes_R2` with the Bayes-R2 definition in the reference paper for supported families. (#1815)
 * Make `read_csv_as_stanfit()` store `adapt_delta` and `max_treedepth` values in
 `$control` so rstan can find these values. Thanks to Tristan Mahr (#1767).
 * Enable updating argument `data2` for `brmsfit_multiple` objects. (#1776)
