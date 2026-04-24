@@ -543,11 +543,10 @@ validate_joint <- function(joint) {
 #' @noRd
 .kfold_n_eff <- function(log_weights, r_eff) {
   norm_const_log <- matrixStats::colLogSumExps(log_weights)
-  log_weights_norm <- sweep(log_weights, MARGIN = 2, STATS = norm_const_log, 
+  log_weights_norm <- sweep(log_weights, MARGIN = 2, STATS = norm_const_log,
                             check.margin = FALSE)
-  weights_norm <- exp(log_weights_norm)
 
-  1 / colSums(weights_norm^2) * r_eff
+  1 / colSums(exp(log_weights_norm)^2) * r_eff
 }
 
 #' Compute relative effective sample size for K-fold cross-validation
@@ -559,16 +558,12 @@ validate_joint <- function(joint) {
 #' @return vector of relative effective sample sizes
 #' @noRd
 .kfold_r_eff <- function(log_weights, r_eff, chains) {
-  len <- NCOL(log_weights)
-
   if (isTRUE(is.null(r_eff) || all(is.na(r_eff)))) {
-    r_eff <- loo::relative_eff(
-      x = exp(log_weights),
-      chain_id = rep(1:chains, each = NROW(log_weights) / chains)
-    )
+    chain_id <- rep(1:chains, each = NROW(log_weights) / chains)
+    r_eff <- loo::relative_eff(x = exp(log_weights), chain_id = chain_id)
   } else if (length(r_eff) == 1) {
-    r_eff <- rep(r_eff, len)
-  } else if (length(r_eff) != len) {
+    r_eff <- rep(r_eff, NCOL(log_weights))
+  } else if (length(r_eff) != NCOL(log_weights)) {
     stop(
       "'r_eff' must have one value or one value per observation.",
       call. = FALSE
