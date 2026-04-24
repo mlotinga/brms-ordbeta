@@ -543,8 +543,8 @@ validate_joint <- function(joint) {
 #' @noRd
 .kfold_n_eff <- function(log_weights, r_eff) {
   norm_const_log <- matrixStats::colLogSumExps(log_weights)
-  log_weights_norm <- sweep(log_weights, MARGIN = 2,
-    STATS = norm_const_log, check.margin = FALSE)
+  log_weights_norm <- sweep(log_weights, MARGIN = 2, STATS = norm_const_log, 
+                            check.margin = FALSE)
   weights_norm <- exp(log_weights_norm)
 
   1 / colSums(weights_norm^2) * r_eff
@@ -586,5 +586,5 @@ validate_joint <- function(joint) {
 #' @return sample-size dependent threshold capped at 0.7
 #' @noRd
 .kfold_k_threshold <- function(S) {
-  min(1 - 1 / log10(S), 0.7)
+  min(posterior::ps_khat_threshold(S), 0.7)
 }
