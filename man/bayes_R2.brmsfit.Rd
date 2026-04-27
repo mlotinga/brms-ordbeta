@@ -49,10 +49,10 @@ Compute a Bayesian version of R-squared for regression models
 \details{
 For an introduction to the approach, see Gelman et al. (2019)
  and \url{https://github.com/jgabry/bayes_R2/}.
- For Gaussian and Bernoulli models, \code{bayes_R2} uses model-based
- residual variances as proposed in Gelman et al. (2019), with Bernoulli
- models using Tjur's pseudo-variance. For other families, \code{bayes_R2}
- warns and falls back to residual-based variances.
+ For Gaussian (homoscedastic sigma) and Bernoulli models, \code{bayes_R2} 
+ uses model-based residual variances as proposed in Gelman et al. (2019), 
+ with Bernoulli models using Tjur's pseudo-variance. For other families, 
+ \code{bayes_R2} warns and falls back to residual-based variances.
 }
 \examples{
 \dontrun{
