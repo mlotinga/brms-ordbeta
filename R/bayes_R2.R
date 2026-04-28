@@ -15,15 +15,21 @@
 #'
 #' @details For an introduction to the approach, see Gelman et al. (2019)
 #'  and \url{https://github.com/jgabry/bayes_R2/}.
-#'  For Gaussian (homoscedastic sigma) and Bernoulli models, \code{bayes_R2} 
-#'  uses model-based residual variances as proposed in Gelman et al. (2019), 
-#'  with Bernoulli models using Tjur's pseudo-variance. For other families, 
+#'  For Gaussian and Bernoulli models, \code{bayes_R2} uses model-based residual
+#'  variances as proposed in Gelman et al. (2019), with Bernoulli models using 
+#'  Tjur's pseudo-variance. For Gaussian models with heteroscedastic
+#'  sigma, the mean residual variance is used as an approximation (see Tjur 
+#'  (2009) for discussion on this approximation). For other families, 
 #'  \code{bayes_R2} warns and falls back to residual-based variances.
 #'
 #' @references Andrew Gelman, Ben Goodrich, Jonah Gabry & Aki Vehtari. (2019).
 #'   R-squared for Bayesian regression models, \emph{The American Statistician},
 #'   73(3):307-309. \code{10.1080/00031305.2018.1549100} (Preprint available at
 #'   \url{https://acris.aalto.fi/ws/portalfiles/portal/34206843/bayes_R2_v3.pdf})
+#' 
+#'   Tue Tjur. (2009). Coefficient of determination in logistic regression 
+#'   models - A new proposal: The coefficient of discrimination, \emph{The 
+#'   American Statistician}, 63:366-372. \code{10.1198/tast.2009.08210}
 #'
 #' @examples
 #' \dontrun{
@@ -77,9 +83,7 @@ bayes_R2.brmsfit <- function(object, resp = NULL, summary = TRUE,
   args_ypred <- list(object, sort = TRUE, ...)
   R2 <- named_list(paste0("R2", resp))
   warned_families <- character(0)
-  
-  fallback_msg <- "Falling back to residual-based R2 computation."
-  
+
   for (i in seq_along(R2)) {
     # assumes expectations of different responses to be independent
     args_ypred$resp <- resp[i]
@@ -92,20 +96,10 @@ bayes_R2.brmsfit <- function(object, resp = NULL, summary = TRUE,
       args_sigma <- args_ypred
       args_sigma$dpar <- "sigma"
       sigma <- do_call(posterior_epred, args_sigma)
-      is_heteroscedastic <- any(
-        matrixStats::rowVars(sigma) > .Machine$double.eps * matrixStats::rowMeans2(sigma)^2
-      )
-      if (is_heteroscedastic) {
-        warning2(
-          "Detected heteroscedastic sigma. The model-based Bayes R\u00b2 is ",
-          "not yet implemented\nfor the heteroscedastic case. ", fallback_msg
-        )
-        y <- do_call(get_y, c(list(object, warn = TRUE, resp = resp[i]), list(...)))
-        R2[[i]] <- .bayes_R2_res(y, ypred)
-      } else {
-        var_res <- matrixStats::rowMeans2(sigma)^2
-        R2[[i]] <- .bayes_R2_model(ypred, var_res)
-      }
+      # use mean of heteroscedastic sigma as approximate 
+      # (see Tjur (2009) for discussion)
+      var_res <- matrixStats::rowMeans2(sigma)^2
+      R2[[i]] <- .bayes_R2_model(ypred, var_res)
     } else if (family_name %in% "bernoulli") {
       var_res <- matrixStats::rowMeans2(ypred * (1 - ypred))
       R2[[i]] <- .bayes_R2_model(ypred, var_res)
@@ -113,7 +107,8 @@ bayes_R2.brmsfit <- function(object, resp = NULL, summary = TRUE,
       if (!family_name %in% warned_families) {
         warning2(
           "No model-based residual variance is currently implemented for ",
-          "family '", family_name, "'\nin 'bayes_R2'. ", fallback_msg
+          "family '", family_name, "'\nin 'bayes_R2'. ",
+          "Falling back to residual-based R2 computation."
         )
         warned_families <- c(warned_families, family_name)
       }
