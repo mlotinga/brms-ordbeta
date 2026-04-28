@@ -47,11 +47,6 @@
 #' @param future_args A list of further arguments passed to
 #'   \code{\link[future:future]{future}} for additional control over parallel
 #'   execution if activated.
-#' @param r_eff Vector of relative effective sample size estimates of each 
-#'   observation. `r_eff` has to be a scalar (same value is used
-#'   for all observations) or a vector with length equal to the number of
-#'   observations. The default value is 1. If r_eff is NULL 
-#'   [loo::relative_eff()] is used for computing `r_eff`.
 #' @param ... Further arguments passed to \code{\link{brm}} and
 #'    \code{\link{log_lik}}.
 #'
@@ -154,21 +149,18 @@
 kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
                           group = NULL, joint = FALSE, compare = TRUE,
                           resp = NULL, model_names = NULL, save_fits = FALSE,
-                          recompile = NULL, future_args = list(),
-                          r_eff = 1) {
+                          recompile = NULL, future_args = list()) {
   args <- split_dots(x, ..., model_names = model_names)
   if (!"use_stored" %in% names(args)) {
     further_arg_names <- c(
-      "K", "Ksub", "folds", "group", "joint", "resp", "save_fits",
-      "r_eff"
+      "K", "Ksub", "folds", "group", "joint", "resp", "save_fits"
     )
     args$use_stored <- all(names(args) %in% "models") &&
       !any(further_arg_names %in% names(match.call()))
   }
   c(args) <- nlist(
     criterion = "kfold", K, Ksub, folds, group, joint,
-    compare, resp, save_fits, recompile, future_args,
-    r_eff
+    compare, resp, save_fits, recompile, future_args
   )
   do_call(compute_loolist, args)
 }
@@ -178,8 +170,7 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
 # @param model_name ignored but included to avoid being passed to '...'
 .kfold <- function(x, K, Ksub, folds, group, joint, save_fits,
                    newdata, resp, model_name, recompile = NULL,
-                   future_args = list(), newdata2 = NULL,
-                   r_eff, ...) {
+                   future_args = list(), newdata2 = NULL, ...) {
   stopifnot(is.brmsfit(x), is.list(future_args))
   if (is.brmsfit_multiple(x)) {
     warn_brmsfit_multiple(x)
@@ -347,19 +338,10 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
 
   lppds <- do_call(cbind, lppds)
 
-  diagnostics$pareto_k <- apply(
-    lppds, 2, posterior::pareto_khat,
-    are_log_weights = TRUE
-  )
-  diagnostics$r_eff <- .kfold_r_eff(
-    log_weights = -lppds, 
-    r_eff = r_eff,
-    chains = first_not_null(dots$chains, nchains(x))
-  )
-  diagnostics$n_eff <- .kfold_n_eff(
-    log_weights = -lppds, 
-    r_eff = diagnostics$r_eff
-  )
+  diagnostics$pareto_k <- apply(lppds, 2, posterior::pareto_khat,
+                                are_log_weights = TRUE)
+  diagnostics$n_eff <- apply(exp(lppds), 2, posterior::ess_mean)
+  diagnostics$r_eff <- diagnostics$n_eff / nrow(lppds)
 
   elpds <- apply(lppds, 2, log_mean_exp)
   pred_obs <- unlist(pred_obs_list)
@@ -414,7 +396,7 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
   estimates <- cbind(Estimate = est, SE = se_est)
   rownames(estimates) <- colnames(pointwise)
   out <- nlist(estimates, pointwise, diagnostics)
-  k_threshold <- .kfold_k_threshold(nrow(lppds))
+  k_threshold <- min(posterior::ps_khat_threshold(nrow(lppds)), 0.7)
   atts <- nlist(K, Ksub, group, folds, fold_type, joint, k_threshold)
   attributes(out)[names(atts)] <- atts
   if (save_fits) {
@@ -520,66 +502,3 @@ validate_joint <- function(joint) {
   match.arg(joint, options)
 }
 
-#' Compute effective sample size for K-fold cross-validation
-#'
-#' @param log_weights matrix of unnormalized log weights
-#' @param r_eff relative effective sample size estimates
-#' @return vector of effective sample sizes
-#' @note
-#' The effective sample size (ESS) is computed from the
-#' normalized importance weights as
-#' $\text{ESS}_i = \frac{1}{\sum_{s=1}^{S} \tilde w_{si}^2} \times r_{\text{eff},i}$ 
-#' for each observation $i$, where $\tilde w_{si}$ are the
-#' normalized importance weights over draws $s=1,\dots,S$, so
-#' $\sum_s \tilde w_{si}=1$. The normalization is done by
-#' $$
-#' \begin{align*}
-#' \log Z_i &= \log\left(\sum_{s=1}^S \exp(w_{si})\right) \\
-#' \log \tilde w_{si} &= w_{si} - \log Z_i \\
-#' \tilde w_{si} &= \exp(\log \tilde w_{si})
-#' \end{align*}
-#' $$
-#' where w_{si} are the unnormalized log weights.
-#' @noRd
-.kfold_n_eff <- function(log_weights, r_eff) {
-  norm_const_log <- matrixStats::colLogSumExps(log_weights)
-  log_weights_norm <- sweep(log_weights, MARGIN = 2, STATS = norm_const_log,
-                            check.margin = FALSE)
-
-  1 / colSums(exp(log_weights_norm)^2) * r_eff
-}
-
-#' Compute relative effective sample size for K-fold cross-validation
-#'
-#' @param log_weights matrix of unnormalized log weights
-#' @param r_eff relative effective sample size estimates. If NULL,
-#'   [loo::relative_eff()] is used for computing `r_eff`.
-#' @param chains number of chains
-#' @return vector of relative effective sample sizes
-#' @noRd
-.kfold_r_eff <- function(log_weights, r_eff, chains) {
-  if (isTRUE(is.null(r_eff) || all(is.na(r_eff)))) {
-    chain_id <- rep(1:chains, each = NROW(log_weights) / chains)
-    r_eff <- loo::relative_eff(x = exp(log_weights), chain_id = chain_id)
-  } else if (length(r_eff) == 1) {
-    r_eff <- rep(r_eff, NCOL(log_weights))
-  } else if (length(r_eff) != NCOL(log_weights)) {
-    stop(
-      "'r_eff' must have one value or one value per observation.",
-      call. = FALSE
-    )
-  } else if (anyNA(r_eff)) {
-    message("Replacing NAs in `r_eff` with 1s")
-    r_eff[is.na(r_eff)] <- 1
-  }
-  r_eff
-}
-
-#' Pareto-k threshold for K-fold diagnostics
-#'
-#' @param S posterior sample size
-#' @return sample-size dependent threshold capped at 0.7
-#' @noRd
-.kfold_k_threshold <- function(S) {
-  min(posterior::ps_khat_threshold(S), 0.7)
-}

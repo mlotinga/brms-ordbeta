@@ -18,8 +18,7 @@
   model_names = NULL,
   save_fits = FALSE,
   recompile = NULL,
-  future_args = list(),
-  r_eff = 1
+  future_args = list()
 )
 }
 \arguments{
@@ -86,12 +85,6 @@ another machine than the one used to fit the model.}
 \item{future_args}{A list of further arguments passed to
 \code{\link[future:future]{future}} for additional control over parallel
 execution if activated.}
-
-\item{r_eff}{Vector of relative effective sample size estimates of each 
-observation. `r_eff` has to be a scalar (same value is used
-for all observations) or a vector with length equal to the number of
-observations. The default value is 1. If r_eff is NULL 
-[loo::relative_eff()] is used for computing `r_eff`.}
 }
 \value{
 \code{kfold} returns an object that has a similar structure as the
