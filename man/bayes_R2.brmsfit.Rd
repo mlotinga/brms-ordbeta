@@ -8,6 +8,7 @@
 \method{bayes_R2}{brmsfit}(
   object,
   resp = NULL,
+  method = NULL,
   summary = TRUE,
   robust = FALSE,
   probs = c(0.025, 0.975),
@@ -19,6 +20,12 @@
 
 \item{resp}{Optional names of response variables. If specified, predictions
 are performed only for the specified response variables.}
+
+\item{method}{Character string specifying how R2 is computed. Either
+`"model"` to use the model-based variances, or `"residual"` to
+use the residual-based variances. If `NULL` (the default), the
+model-based R2 is computed where possible, falling back to residual-based
+R2 for families without current support of model-based variances.}
 
 \item{summary}{Should summary statistics be returned
 instead of the raw values? Default is \code{TRUE}.}
