@@ -118,6 +118,9 @@ test_that("bayes_R2 has reasonable ouputs", {
     R2 <- bayes_R2(fit1, summary = FALSE),
     "No model-based residual variance is currently implemented"
   )
+  expect_no_warning(
+    R2 <- bayes_R2(fit1, method = "residual", summary = FALSE)
+  )
   expect_equal(dim(R2), c(ndraws(fit1), 1))
   fit1 <- SW(add_criterion(fit1, "bayes_R2"))
   R2 <- SW(bayes_R2(fit2, newdata = model.frame(fit2)[1:5, ], re_formula = NA))
