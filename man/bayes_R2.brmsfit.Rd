@@ -23,7 +23,7 @@ are performed only for the specified response variables.}
 
 \item{method}{Character string specifying how R2 is computed. Either
 `"model"` to use the model-based variances, or `"residual"` to
-use the residual-based variances. If `NULL` (the default), the
+use the residual-based variances. If `NULL` (default), the
 model-based R2 is computed where possible, falling back to residual-based
 R2 for families without current support of model-based variances.}
 

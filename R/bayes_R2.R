@@ -5,7 +5,7 @@
 #' @inheritParams predict.brmsfit
 #' @param method Character string specifying how R2 is computed. Either
 #'   `"model"` to use the model-based variances, or `"residual"` to
-#'   use the residual-based variances. If `NULL` (the default), the
+#'   use the residual-based variances. If `NULL` (default), the
 #'   model-based R2 is computed where possible, falling back to residual-based
 #'   R2 for families without current support of model-based variances.
 #' @param ... Further arguments passed to
@@ -91,7 +91,8 @@ bayes_R2.brmsfit <- function(object, resp = NULL, method = NULL, summary = TRUE,
   args_ypred <- list(object, sort = TRUE, ...)
   R2 <- named_list(paste0("R2", resp))
   warned_families <- character(0)
-  supported_model_variances <- c("gaussian", "bernoulli")
+  # TODO: find supported families automatically once more are supported
+  model_variance_families <- c("gaussian", "bernoulli")
   
   for (i in seq_along(R2)) {
     # assumes expectations of different responses to be independent
@@ -101,25 +102,27 @@ bayes_R2.brmsfit <- function(object, resp = NULL, method = NULL, summary = TRUE,
       ypred <- ordinal_probs_continuous(ypred)
     }
     family_name <- family(object, resp = resp[i])$family
-    
-    if (!is.null(method) && method == "residual") {
-      R2[[i]] <- .residual_r2(i, object, resp, ypred)
-    } else {
-      if (family_name == "gaussian") {
-        R2[[i]] <- .gaussian_r2(ypred, posterior_epred, args_ypred)
-      } else if (family_name == "bernoulli") {
-        R2[[i]] <- .bernoulli_r2(ypred)
-      } else if (!family_name %in% supported_model_variances) {
-        if (!family_name %in% warned_families) {
-          warning2(
-            "No model-based residual variance is currently implemented for ",
-            "family '", family_name, "'\nin 'bayes_R2'. ",
-            "Falling back to residual-based R2 computation."
-          )
-          warned_families <- c(warned_families, family_name)
-        }
-        R2[[i]] <- .residual_r2(i, object, resp, ypred)
+
+    method_i <- method
+    if (is.null(method_i)) {
+      method_i <- str_if(
+        family_name %in% model_variance_families, 
+        "model", "residual"
+      )
+      if (method_i == "residual") {
+        warning2(
+          "No model-based residual variance is currently implemented for ",
+          "family '", family_name, "'\nin 'bayes_R2'. ",
+          "Falling back to residual-based R2 computation."
+        )
+        warned_families <- c(warned_families, family_name)
       }
+    }
+    
+    if (method_i == "model") {
+      R2[[i]] <- bayes_R2_model(ypred, family_name, args_ypred = args_ypred, ...)
+    } else if (method_i == "residual") {
+      R2[[i]] <- bayes_R2_residual(ypred, object, resp = resp[i], ...)
     }
   }
 
@@ -131,39 +134,35 @@ bayes_R2.brmsfit <- function(object, resp = NULL, method = NULL, summary = TRUE,
   R2
 }
 
-# internal function of bayes_R2.brmsfit
-# see https://github.com/jgabry/bayes_R2/blob/master/bayes_R2.pdf
-.bayes_R2_res <- function(y, ypred, ...) {
-  e <- -1 * sweep(ypred, 2, y)
-  var_ypred <- matrixStats::rowVars(ypred)
-  var_e <- matrixStats::rowVars(e)
-  as.matrix(var_ypred / (var_ypred + var_e))
+bayes_R2_model <- function(ypred, family_name, ...) {
+  var_res_fun <- get(paste0(".var_res_", family_name), mode = "function")
+  var_res <- var_res_fun(ypred, ...)
+  .bayes_R2(ypred, var_res)
 }
 
-.bayes_R2_model <- function(ypred, var_res, ...) {
+bayes_R2_residual <- function(ypred, object, resp, ...) {
+  y <- do_call(get_y, c(list(object, warn = TRUE, resp = resp), list(...)))
+  res <- -1 * sweep(ypred, 2, y)
+  var_res <- matrixStats::rowVars(res)
+  .bayes_R2(ypred, var_res)
+}
+
+.bayes_R2 <- function(ypred, var_res) {
   var_ypred <- matrixStats::rowVars(ypred)
   as.matrix(var_ypred / (var_ypred + var_res))
 }
 
-.residual_r2 <- function(i, object, resp, ypred, ...) {
-  y <- do_call(get_y, c(list(object, warn = TRUE, resp = resp[i]), list(...)))
-  .bayes_R2_res(y, ypred)
-}
-
-# ------------------- family specific model-based R2 functions -----------------
-
-.gaussian_r2 <- function(ypred, posterior_epred, args_ypred) {
+# ------------------- family-specific residual variances -----------------
+.var_res_gaussian <- function(ypred, args_ypred, ...) {
   args_sigma <- args_ypred
   args_sigma$dpar <- "sigma"
   sigma <- do_call(posterior_epred, args_sigma)
   # use mean of heteroscedastic sigma as approximate 
   # (see Tjur (2009) for discussion)
-  var_res <- matrixStats::rowMeans2(sigma)^2
-  .bayes_R2_model(ypred, var_res)
+  matrixStats::rowMeans2(sigma)^2
 }
 
-.bernoulli_r2 <- function(ypred) {
-  var_res <- matrixStats::rowMeans2(ypred * (1 - ypred))
-  .bayes_R2_model(ypred, var_res)
+.var_res_bernoulli <- function(ypred, ...) {
+  matrixStats::rowMeans2(ypred * (1 - ypred))
 }
 
