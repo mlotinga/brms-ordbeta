@@ -35,6 +35,9 @@ Thanks to Sermet Pekin. (#1790)
 
 ### Bug Fixes
 
+* `bayes_R2` now uses model-based residual variances for Gaussian and Bernoulli 
+models and falls back to residual-based computation for other families. This 
+change may lead to changes in plotting results. (#1815)
 * Avoid the creation of zombie workers when executing `log_lik`
 in parallel thanks to Aki Vehtari and Noa Kallioinen. 
 For now, `log_lik` will use PSOCK clusters if run

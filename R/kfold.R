@@ -242,6 +242,9 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
     # see issue #441 for reasons to check for arrays
     is_array_Ksub <- is.array(Ksub)
     Ksub <- as.integer(Ksub)
+    if (length(Ksub) == 0L) {
+      stop2("'Ksub' must be a positive integer or a non-empty integer vector.")
+    }
     if (any(Ksub <= 0 | Ksub > K)) {
       stop2("'Ksub' must contain positive integers not larger than 'K'.")
     }
@@ -322,6 +325,7 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
   future_args$future.seed <- TRUE
   res <- do_call("future_lapply", future_args, pkg = "future.apply")
 
+  diagnostics <- vector("list")
   lppds <- pred_obs_list <- vector("list", length(Ksub))
   if (save_fits) {
     fits <- array(list(), dim = c(length(Ksub), 3))
@@ -336,6 +340,12 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
   }
 
   lppds <- do_call(cbind, lppds)
+
+  diagnostics$pareto_k <- apply(lppds, 2, posterior::pareto_khat,
+                                are_log_weights = TRUE)
+  diagnostics$n_eff <- apply(exp(lppds), 2, posterior::ess_mean)
+  diagnostics$r_eff <- diagnostics$n_eff / nrow(lppds)
+
   elpds <- apply(lppds, 2, log_mean_exp)
   pred_obs <- unlist(pred_obs_list)
   if (joint == "obs") {
@@ -388,15 +398,23 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
   se_est <- sqrt(nrow(pointwise) * apply(pointwise, 2, var))
   estimates <- cbind(Estimate = est, SE = se_est)
   rownames(estimates) <- colnames(pointwise)
-  out <- nlist(estimates, pointwise)
-  atts <- nlist(K, Ksub, group, folds, fold_type, joint)
+  out <- nlist(estimates, pointwise, diagnostics)
+  k_threshold <- min(posterior::ps_khat_threshold(nrow(lppds)), 0.7)
+  atts <- nlist(K, Ksub, group, folds, fold_type, joint, k_threshold)
   attributes(out)[names(atts)] <- atts
   if (save_fits) {
     out$fits <- fits
     out$data <- newdata
     out$data2 <- newdata2
   }
-  structure(out, class = c("kfold", "loo"))
+  if (length(loo::pareto_k_ids(out, threshold = k_threshold)) > 0) {
+    warning2(
+      "Found ", length(loo::pareto_k_ids(out, threshold = k_threshold)),
+      " observations with a pareto_k > ", k_threshold,
+      " in model '", model_name, "'."
+    )
+  }
+  structure(out, dims = dim(lppds), class = c("kfold", "loo"))
 }
 
 #' Predictions from K-Fold Cross-Validation
@@ -486,3 +504,4 @@ validate_joint <- function(joint) {
   options <- c("obs", "fold", "group")
   match.arg(joint, options)
 }
+

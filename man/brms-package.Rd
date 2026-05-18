@@ -105,6 +105,7 @@ Other contributors:
   \item Wellington J. Silva [contributor]
   \item Luiz Carvalho [contributor]
   \item Sermet Pekin [contributor]
+  \item Florence Bockting [contributor]
 }
 
 }
