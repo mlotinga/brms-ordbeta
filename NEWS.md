@@ -19,6 +19,8 @@ Thanks to Sermet Pekin. (#1790)
 
 ### Bug Fixes
 
+* `kfold_predict()` supports now families whose predictions are not draws x 
+observations matrices (e.g. categorical models). (#1889)
 * `bayes_R2` now uses model-based residual variances for Gaussian and Bernoulli 
 models and falls back to residual-based computation for other families. This 
 change may lead to changes in plotting results. (#1815)
