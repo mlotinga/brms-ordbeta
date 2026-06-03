@@ -432,9 +432,12 @@ kfold.brmsfit <- function(x, ..., K = 10, Ksub = NULL, folds = NULL,
 #' @inheritParams posterior_predict.brmsfit
 #'
 #' @return A \code{list} with two slots named \code{'y'} and \code{'yrep'}.
-#'   Slot \code{y} contains the vector of observed responses.
-#'   Slot \code{yrep} contains the matrix of predicted responses,
-#'   with rows being posterior draws and columns being observations.
+#'   \code{y} is a named vector of observed responses (names = row indices).
+#'   \code{yrep} is an \code{array} of predictions with the same structure as
+#'   the chosen \code{method} would return for all \eqn{N} out-of-fold
+#'   observations at once, with posterior draws on the first dimension and
+#'   observations on the second. See the documentation of the underlying
+#'   prediction function for details on additional dimensions.
 #'
 #' @seealso \code{\link{kfold}}
 #'
@@ -470,22 +473,38 @@ kfold_predict <- function(x, method = "posterior_predict", resp = NULL, ...) {
   }
   method <- get(validate_pp_method(method), mode = "function")
   resp <- validate_resp(resp, x$fits[[1, "fit"]], multiple = FALSE)
-  all_predicted <- as.character(sort(unlist(x$fits[, "predicted"])))
+  all_predicted <- sort(unlist(x$fits[, "predicted"]))
   npredicted <- length(all_predicted)
-  ndraws <- ndraws(x$fits[[1, "fit"]])
+  
   y <- rep(NA, npredicted)
-  yrep <- matrix(NA, nrow = ndraws, ncol = npredicted)
-  names(y) <- colnames(yrep) <- all_predicted
+  names(y) <- as.character(all_predicted)
+  yrep <- NULL
+
   for (k in seq_rows(x$fits)) {
     fit_k <- x$fits[[k, "fit"]]
     predicted_k <- x$fits[[k, "predicted"]]
-    obs_names <- as.character(predicted_k)
+
+    obs <- match(predicted_k, all_predicted)
     newdata <- x$data[predicted_k, , drop = FALSE]
-    y[obs_names] <- get_y(fit_k, resp, newdata = newdata, ...)
-    yrep[, obs_names] <- method(
+    
+    y[obs] <- get_y(fit_k, resp, newdata = newdata, ...)
+    
+    yrep_k <- method(
       fit_k, newdata = newdata, resp = resp,
       allow_new_levels = TRUE, summary = FALSE, ...
     )
+    
+    if (is.null(yrep)) {
+      yrep_dim <- dim(yrep_k)
+      yrep_dim[2] <- npredicted
+      yrep_dimnames <- dimnames(yrep_k)
+      if (is.null(yrep_dimnames)) {
+        yrep_dimnames <- vector("list", length(yrep_dim))
+      }
+      yrep_dimnames[[2]] <- as.character(all_predicted) 
+      yrep <- array(NA, dim = yrep_dim, dimnames = yrep_dimnames)
+    }
+    yrep <- .assign_yrep(yrep, obs, yrep_k)
   }
   nlist(y, yrep)
 }
@@ -505,3 +524,9 @@ validate_joint <- function(joint) {
   match.arg(joint, options)
 }
 
+# internal function
+.assign_yrep <- function(yrep, obs, value) {
+    idx <- rep(list(TRUE), length(dim(yrep)))
+    idx[[2]] <- obs
+    do.call("[<-", c(list(yrep), idx, list(value = value)))
+  }
