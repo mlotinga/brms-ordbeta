@@ -482,11 +482,10 @@ kfold_predict <- function(x, method = "posterior_predict", resp = NULL, ...) {
   for (k in seq_rows(x$fits)) {
     fit_k <- x$fits[[k, "fit"]]
     predicted_k <- x$fits[[k, "predicted"]]
-    # indexes the obs of the current fold within the total obs
-    obs_k <- match(predicted_k, all_predicted)
+    obs_names <- as.character(predicted_k)
     newdata <- x$data[predicted_k, , drop = FALSE]
     
-    y[obs_k] <- get_y(fit_k, resp, newdata = newdata, ...)
+    y[obs_names] <- get_y(fit_k, resp, newdata = newdata, ...)
     
     yrep_k <- method(
       fit_k, newdata = newdata, resp = resp,
@@ -494,7 +493,7 @@ kfold_predict <- function(x, method = "posterior_predict", resp = NULL, ...) {
     )
     
     yrep <- .update_yrep(
-      yrep, obs_k, yrep_k, npredicted, all_predicted
+      yrep, obs_names, yrep_k, npredicted, all_predicted
     )
   }
   nlist(y, yrep)
