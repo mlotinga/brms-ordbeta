@@ -476,35 +476,26 @@ kfold_predict <- function(x, method = "posterior_predict", resp = NULL, ...) {
   all_predicted <- sort(unlist(x$fits[, "predicted"]))
   npredicted <- length(all_predicted)
   
-  y <- rep(NA, npredicted)
-  names(y) <- as.character(all_predicted)
+  y <- setNames(rep(NA, npredicted), as.character(all_predicted))
   yrep <- NULL
 
   for (k in seq_rows(x$fits)) {
     fit_k <- x$fits[[k, "fit"]]
     predicted_k <- x$fits[[k, "predicted"]]
-
-    obs <- match(predicted_k, all_predicted)
+    # indexes the obs of the current fold within the total obs
+    obs_k <- match(predicted_k, all_predicted)
     newdata <- x$data[predicted_k, , drop = FALSE]
     
-    y[obs] <- get_y(fit_k, resp, newdata = newdata, ...)
+    y[obs_k] <- get_y(fit_k, resp, newdata = newdata, ...)
     
     yrep_k <- method(
       fit_k, newdata = newdata, resp = resp,
       allow_new_levels = TRUE, summary = FALSE, ...
     )
     
-    if (is.null(yrep)) {
-      yrep_dim <- dim(yrep_k)
-      yrep_dim[2] <- npredicted
-      yrep_dimnames <- dimnames(yrep_k)
-      if (is.null(yrep_dimnames)) {
-        yrep_dimnames <- vector("list", length(yrep_dim))
-      }
-      yrep_dimnames[[2]] <- as.character(all_predicted) 
-      yrep <- array(NA, dim = yrep_dim, dimnames = yrep_dimnames)
-    }
-    yrep <- .assign_yrep(yrep, obs, yrep_k)
+    yrep <- .update_yrep(
+      yrep, obs_k, yrep_k, npredicted, all_predicted
+    )
   }
   nlist(y, yrep)
 }
@@ -524,9 +515,23 @@ validate_joint <- function(joint) {
   match.arg(joint, options)
 }
 
-# internal function
-.assign_yrep <- function(yrep, obs, value) {
-    idx <- rep(list(TRUE), length(dim(yrep)))
-    idx[[2]] <- obs
-    do.call("[<-", c(list(yrep), idx, list(value = value)))
+# internal function for initializing the yrep array and filling it with
+# predictions of each fold.
+.update_yrep <- function(yrep, obs, value, nrep, all_pred) {
+  # On first fold: 
+  if (is.null(yrep)) {
+    # initialise as NA array with same dimensions as yrep_k (returned from method)
+    d <- dim(value)
+    # expand 2nd dimension (number of observations) to cover all obs across folds
+    d[2] <- nrep
+    dn <- dimnames(value) %||% vector("list", length(d))
+    dn[[2]] <- as.character(all_pred)
+    # create array with correct dimensions and provide names for dimensions
+    yrep <- array(NA, dim = d, dimnames = dn)
   }
+  idx <- rep(list(TRUE), length(dim(yrep)))
+  idx[[2]] <- obs
+  # equivalent to: list(yrep)[idx] <- value
+  # overwrites the NA entries of yrep with values from this fold (via idx)
+  do.call("[<-", c(list(yrep), idx, list(value = value)))
+}
